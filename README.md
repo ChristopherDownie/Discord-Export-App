@@ -2,7 +2,7 @@
 
 A comprehensive desktop application built with Electron, React, and Vite that allows users to export, view, and analyze their Discord chat history in a beautiful, user-friendly interface. 
 
-![App Screenshot](public/vite.svg) *// TODO: Add actual screenshot*
+<img width="1377" height="840" alt="Screenshot 2026-03-05 at 10 36 29 AM" src="https://github.com/user-attachments/assets/4ac7f39c-062b-4b49-9fa6-c1fd449d415e" />
 
 ## Features
 
@@ -58,6 +58,7 @@ npm run build:mac
 ```bash
 npm run build
 ```
+<img width="1393" height="698" alt="Screenshot 2026-03-05 at 10 36 39 AM" src="https://github.com/user-attachments/assets/f44ab4cc-6fc0-4f48-818b-fb09dd9e108f" />
 
 ## Technologies Used
 
@@ -66,6 +67,8 @@ npm run build
 - [Vite](https://vitejs.dev/) - Fast build tool and development server
 - [TypeScript](https://www.typescriptlang.org/) - Static typing for JavaScript
 - Vanilla CSS - Custom, lightweight styling for a modern UI
+
+  
 
 ## License
 
