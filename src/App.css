@@ -1,0 +1,294 @@
+/* Draggable macOS titlebar region */
+.draggable-titlebar {
+  height: 48px;
+  width: 100%;
+  -webkit-app-region: drag;
+  display: flex;
+  align-items: center;
+  padding-left: 80px;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 100;
+}
+
+.draggable-titlebar button {
+  -webkit-app-region: no-drag;
+}
+
+/* LuxAlgo Neon Mesh Gradient Background */
+.hero-background {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  background-color: var(--bg-primary);
+}
+
+/* Animated neon glow orbs */
+.hero-background::before,
+.hero-background::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(140px);
+  opacity: 0.4;
+  animation: neonFloat 30s infinite ease-in-out alternate;
+}
+
+/* Cyan orb — top-left */
+.hero-background::before {
+  width: 50vw;
+  height: 50vw;
+  background: radial-gradient(circle, rgba(0, 240, 255, 0.5) 0%, transparent 70%);
+  top: -25%;
+  left: -15%;
+}
+
+/* Magenta/Violet orb — bottom-right */
+.hero-background::after {
+  width: 55vw;
+  height: 55vw;
+  background: radial-gradient(circle, rgba(255, 0, 229, 0.35) 0%, rgba(139, 92, 246, 0.2) 40%, transparent 70%);
+  bottom: -25%;
+  right: -15%;
+  animation-delay: -15s;
+}
+
+@keyframes neonFloat {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  33% {
+    transform: translate(40px, -20px) scale(1.08);
+  }
+
+  66% {
+    transform: translate(-30px, 40px) scale(0.95);
+  }
+
+  100% {
+    transform: translate(20px, 60px) scale(1.05);
+  }
+}
+
+/* Dark Glass Panel — trading terminal feel */
+.glass-panel {
+  background: var(--bg-glass);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-glass);
+}
+
+/* Subtle neon edge highlight on hover */
+.glass-panel:hover {
+  border-color: var(--border-glass-light);
+}
+
+.app-container {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  padding-top: 48px;
+}
+
+/* ===== File Transfer Animation ===== */
+.file-transfer-scene {
+  width: 280px;
+  height: 120px;
+  position: relative;
+  margin-bottom: 24px;
+}
+
+/* Source & Destination endpoints */
+.ft-endpoint {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.ft-source {
+  left: 0;
+  background: linear-gradient(135deg, #5865F2, #7B68EE);
+  box-shadow: 0 0 20px rgba(88, 101, 242, 0.4);
+  animation: endpointPulse 2s ease-in-out infinite;
+}
+
+.ft-dest {
+  right: 0;
+  background: linear-gradient(135deg, var(--accent-primary), #00C4D4);
+  box-shadow: 0 0 20px var(--accent-glow);
+  animation: endpointPulse 2s ease-in-out infinite 1s;
+}
+
+@keyframes endpointPulse {
+
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(0, 240, 255, 0.3);
+  }
+
+  50% {
+    box-shadow: 0 0 30px rgba(0, 240, 255, 0.5), 0 0 60px rgba(0, 240, 255, 0.15);
+  }
+}
+
+.ft-source svg,
+.ft-dest svg {
+  color: white;
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.3));
+}
+
+/* Connection line (glowing track) */
+.ft-track {
+  position: absolute;
+  top: 50%;
+  left: 48px;
+  right: 48px;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(88, 101, 242, 0.2), rgba(0, 240, 255, 0.15), rgba(0, 240, 255, 0.2));
+  transform: translateY(-50%);
+  border-radius: 1px;
+}
+
+.ft-track::after {
+  content: '';
+  position: absolute;
+  inset: -1px 0;
+  background: linear-gradient(90deg, transparent, rgba(0, 240, 255, 0.4), transparent);
+  border-radius: 2px;
+  animation: trackGlow 2.5s ease-in-out infinite;
+}
+
+@keyframes trackGlow {
+
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Flying file documents */
+.ft-file {
+  position: absolute;
+  top: 50%;
+  left: 24px;
+  width: 22px;
+  height: 28px;
+  transform: translateY(-50%);
+  opacity: 0;
+  animation: fileFly 2.4s ease-in-out infinite;
+}
+
+.ft-file:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.ft-file:nth-child(2) {
+  animation-delay: 0.6s;
+}
+
+.ft-file:nth-child(3) {
+  animation-delay: 1.2s;
+}
+
+.ft-file:nth-child(4) {
+  animation-delay: 1.8s;
+}
+
+/* The document shape */
+.ft-file-icon {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.ft-file-body {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(145deg, #1e2433, #161b27);
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  border-radius: 3px 7px 3px 3px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Dog-ear fold on document */
+.ft-file-body::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 7px;
+  height: 7px;
+  background: linear-gradient(135deg, transparent 50%, rgba(0, 240, 255, 0.15) 50%);
+  border-bottom-left-radius: 2px;
+}
+
+/* Text lines on document */
+.ft-file-body::after {
+  content: '';
+  position: absolute;
+  top: 11px;
+  left: 3px;
+  right: 3px;
+  height: 2px;
+  background: rgba(0, 240, 255, 0.2);
+  box-shadow: 0 4px 0 rgba(0, 240, 255, 0.15), 0 8px 0 rgba(0, 240, 255, 0.1);
+}
+
+/* Glow trail behind flying file */
+.ft-file::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 100%;
+  width: 30px;
+  height: 2px;
+  background: linear-gradient(270deg, var(--accent-primary), transparent);
+  transform: translateY(-50%);
+  opacity: 0.6;
+  border-radius: 1px;
+}
+
+@keyframes fileFly {
+  0% {
+    left: 24px;
+    opacity: 0;
+    transform: translateY(-50%) scale(0.5) translateY(-8px);
+  }
+
+  10% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1) translateY(-8px);
+  }
+
+  50% {
+    transform: translateY(-50%) scale(1.05) translateY(-20px);
+  }
+
+  90% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1) translateY(-8px);
+  }
+
+  100% {
+    left: calc(100% - 48px);
+    opacity: 0;
+    transform: translateY(-50%) scale(0.5) translateY(-8px);
+  }
+}
