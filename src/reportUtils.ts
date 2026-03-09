@@ -386,3 +386,282 @@ export function computeModResponseTimes(data: ChannelData[], customMods: string[
         return { modName, avgResponseMs: times.length > 0 ? sum / times.length : 0, replyCount: times.length };
     }).sort((a, b) => b.replyCount - a.replyCount);
 }
+
+// ─── Word Cloud ───────────────────────────────────────────────────────────
+
+export interface WordCloudItem {
+    text: string;
+    value: number;
+}
+
+const STOP_WORDS = new Set([
+    'the', 'be', 'to', 'of', 'and', 'a', 'in', 'that', 'have', 'i', 'it', 'for', 'not', 'on', 'with',
+    'he', 'as', 'you', 'do', 'at', 'this', 'but', 'his', 'by', 'from', 'they', 'we', 'her', 'she',
+    'or', 'an', 'will', 'my', 'one', 'all', 'would', 'there', 'their', 'what', 'so', 'up', 'out',
+    'if', 'about', 'who', 'get', 'which', 'go', 'me', 'when', 'make', 'can', 'like', 'time', 'no',
+    'just', 'him', 'know', 'take', 'people', 'into', 'year', 'your', 'good', 'some', 'could',
+    'them', 'see', 'other', 'than', 'then', 'now', 'look', 'only', 'come', 'its', 'over', 'think',
+    'also', 'back', 'after', 'use', 'two', 'how', 'our', 'work', 'first', 'well', 'way', 'even',
+    'new', 'want', 'because', 'any', 'these', 'give', 'day', 'most', 'us', 'is', 'are', 'was',
+    'were', 'been', 'has', 'had', 'did', 'does', 'am', 'being', 'got', 'im', 'dont', 'thats',
+    'ive', 'youre', 'hes', 'shes', 'theyre', 'weve', 'cant', 'wont', 'didnt', 'isnt', 'arent',
+    'wasnt', 'werent', 'shouldnt', 'couldnt', 'wouldnt', 'yeah', 'yes', 'no', 'ok', 'okay',
+    'really', 'very', 'much', 'more', 'here', 'just', 'lol', 'lmao', 'haha', 'oh', 'ah', 'um',
+    'like', 'gonna', 'wanna', 'gotta', 'pretty', 'thing', 'things', 'stuff', 'lot', 'still',
+    'though', 'right', 'well', 'too', 'actually', 'basically', 'literally', 'maybe',
+]);
+
+export function computeWordCloud(data: ChannelData[], limit = 80): WordCloudItem[] {
+    const wordCounts: Record<string, number> = {};
+
+    for (const ch of data) {
+        for (const msg of ch.messages) {
+            if (!msg.content) continue;
+            // Remove URLs, mentions, emoji codes, and special chars
+            const cleaned = msg.content
+                .replace(/https?:\/\/\S+/g, '')
+                .replace(/<[@#!&]\d+>/g, '')
+                .replace(/<a?:\w+:\d+>/g, '')
+                .replace(/[^a-zA-Z\s]/g, '')
+                .toLowerCase();
+
+            const words = cleaned.split(/\s+/).filter(w => w.length > 2 && !STOP_WORDS.has(w));
+            for (const word of words) {
+                wordCounts[word] = (wordCounts[word] || 0) + 1;
+            }
+        }
+    }
+
+    return Object.entries(wordCounts)
+        .map(([text, value]) => ({ text, value }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, limit);
+}
+
+// ─── Peak Hours (for Polar Chart) ─────────────────────────────────────────
+
+export interface PeakHourStat {
+    hour: number;
+    total: number;
+    label: string;
+}
+
+export function computePeakHours(data: ChannelData[]): PeakHourStat[] {
+    const hourCounts = Array(24).fill(0);
+
+    for (const ch of data) {
+        for (const msg of ch.messages) {
+            const h = new Date(msg.timestamp).getHours();
+            hourCounts[h]++;
+        }
+    }
+
+    return hourCounts.map((total, hour) => ({
+        hour,
+        total,
+        label: hour === 0 ? '12 AM' : hour < 12 ? `${hour} AM` : hour === 12 ? '12 PM' : `${hour - 12} PM`,
+    }));
+}
+
+// ─── Conversation Thread Depth ────────────────────────────────────────────
+
+export interface ThreadDepthStats {
+    histogram: { depth: number; count: number }[];
+    avgDepth: number;
+    maxDepth: number;
+    replyPercentage: number;
+    totalReplies: number;
+}
+
+export function computeThreadDepth(data: ChannelData[]): ThreadDepthStats {
+    let totalMessages = 0;
+    let totalReplies = 0;
+    const depthCounts: Record<number, number> = {};
+
+    for (const ch of data) {
+        const sorted = [...ch.messages].sort((a, b) => a.timestamp - b.timestamp);
+        totalMessages += sorted.length;
+
+        // Track active reply chains: author -> current chain depth
+        let currentChainDepth = 0;
+        let lastWasReply = false;
+
+        for (const msg of sorted) {
+            if (msg.replyAuthor && msg.replyAuthor.trim()) {
+                totalReplies++;
+                if (lastWasReply) {
+                    currentChainDepth++;
+                } else {
+                    currentChainDepth = 1;
+                }
+                lastWasReply = true;
+            } else {
+                if (lastWasReply && currentChainDepth > 0) {
+                    // End of a chain, record it
+                    depthCounts[currentChainDepth] = (depthCounts[currentChainDepth] || 0) + 1;
+                }
+                currentChainDepth = 0;
+                lastWasReply = false;
+            }
+        }
+        // Flush last chain
+        if (lastWasReply && currentChainDepth > 0) {
+            depthCounts[currentChainDepth] = (depthCounts[currentChainDepth] || 0) + 1;
+        }
+    }
+
+    const histogram = Object.entries(depthCounts)
+        .map(([d, count]) => ({ depth: Number(d), count }))
+        .sort((a, b) => a.depth - b.depth);
+
+    const maxDepth = histogram.length > 0 ? histogram[histogram.length - 1].depth : 0;
+    const totalChains = histogram.reduce((s, h) => s + h.count, 0);
+    const weightedSum = histogram.reduce((s, h) => s + h.depth * h.count, 0);
+    const avgDepth = totalChains > 0 ? weightedSum / totalChains : 0;
+
+    return {
+        histogram,
+        avgDepth: Math.round(avgDepth * 10) / 10,
+        maxDepth,
+        replyPercentage: totalMessages > 0 ? Math.round((totalReplies / totalMessages) * 100) : 0,
+        totalReplies,
+    };
+}
+
+// ─── Questions vs. Answers Stats ──────────────────────────────────────────
+
+export interface QAStats {
+    totalQuestions: number;
+    answeredQuestions: number;
+    unansweredQuestions: number;
+    answerRate: number;
+    topAskers: { name: string; count: number }[];
+    topAnswerers: { name: string; count: number }[];
+}
+
+export function computeQAStats(data: ChannelData[]): QAStats {
+    let totalQuestions = 0;
+    let answeredQuestions = 0;
+    const askerCounts: Record<string, number> = {};
+    const answererCounts: Record<string, number> = {};
+
+    for (const ch of data) {
+        const sorted = [...ch.messages].sort((a, b) => a.timestamp - b.timestamp);
+
+        for (let i = 0; i < sorted.length; i++) {
+            const msg = sorted[i];
+            const content = (msg.content || '').trim();
+
+            // Detect questions: contains '?' and is not just '?' alone
+            if (content.includes('?') && content.length > 1) {
+                totalQuestions++;
+                askerCounts[msg.author] = (askerCounts[msg.author] || 0) + 1;
+
+                // Look ahead up to 10 messages for a response
+                let found = false;
+                for (let j = i + 1; j < Math.min(i + 11, sorted.length); j++) {
+                    const response = sorted[j];
+                    // A response is from a different author, not a question itself
+                    if (response.author !== msg.author) {
+                        const rContent = (response.content || '').trim();
+                        if (rContent.length > 0 && !rContent.endsWith('?')) {
+                            answeredQuestions++;
+                            answererCounts[response.author] = (answererCounts[response.author] || 0) + 1;
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                // If the question was replied to directly, also count as answered
+                if (!found) {
+                    for (let j = i + 1; j < Math.min(i + 11, sorted.length); j++) {
+                        if (sorted[j].replyAuthor === msg.author) {
+                            answeredQuestions++;
+                            answererCounts[sorted[j].author] = (answererCounts[sorted[j].author] || 0) + 1;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    const topAskers = Object.entries(askerCounts)
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5);
+
+    const topAnswerers = Object.entries(answererCounts)
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5);
+
+    return {
+        totalQuestions,
+        answeredQuestions,
+        unansweredQuestions: totalQuestions - answeredQuestions,
+        answerRate: totalQuestions > 0 ? Math.round((answeredQuestions / totalQuestions) * 100) : 0,
+        topAskers,
+        topAnswerers,
+    };
+}
+
+// ─── User Interaction Network ─────────────────────────────────────────────
+
+export interface NetworkNode {
+    id: string;
+    messageCount: number;
+}
+
+export interface NetworkLink {
+    source: string;
+    target: string;
+    weight: number;
+}
+
+export interface InteractionNetwork {
+    nodes: NetworkNode[];
+    links: NetworkLink[];
+}
+
+export function computeInteractionNetwork(data: ChannelData[], nodeLimit = 20): InteractionNetwork {
+    // Count messages per user
+    const userMsgCounts: Record<string, number> = {};
+    const pairCounts: Record<string, number> = {};
+
+    for (const ch of data) {
+        for (const msg of ch.messages) {
+            userMsgCounts[msg.author] = (userMsgCounts[msg.author] || 0) + 1;
+
+            if (msg.replyAuthor && msg.replyAuthor.trim() && msg.author !== msg.replyAuthor) {
+                // Normalize edge direction (alphabetical) so A->B and B->A share the same edge
+                const [a, b] = [msg.author, msg.replyAuthor].sort();
+                const key = `${a}|||${b}`;
+                pairCounts[key] = (pairCounts[key] || 0) + 1;
+            }
+        }
+    }
+
+    // Pick top N users by message count
+    const topUsers = Object.entries(userMsgCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, nodeLimit);
+
+    const topUserSet = new Set(topUsers.map(([name]) => name));
+
+    const nodes: NetworkNode[] = topUsers.map(([id, messageCount]) => ({ id, messageCount }));
+
+    const links: NetworkLink[] = Object.entries(pairCounts)
+        .filter(([key]) => {
+            const [a, b] = key.split('|||');
+            return topUserSet.has(a) && topUserSet.has(b);
+        })
+        .map(([key, weight]) => {
+            const [source, target] = key.split('|||');
+            return { source, target, weight };
+        })
+        .filter(l => l.weight >= 2) // Remove very weak connections
+        .sort((a, b) => b.weight - a.weight);
+
+    return { nodes, links };
+}

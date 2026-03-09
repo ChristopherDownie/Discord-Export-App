@@ -1,5 +1,5 @@
 // ReportView.tsx — Interactive Analytics Dashboard
-import { useMemo, useState, useEffect, useRef } from 'react';
+import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import {
     Chart as ChartJS,
     CategoryScale,
@@ -11,8 +11,9 @@ import {
     Tooltip,
     Legend,
     ArcElement,
+    RadialLinearScale,
 } from 'chart.js';
-import { Bar, Line, Doughnut } from 'react-chartjs-2';
+import { Bar, Line, Doughnut, PolarArea } from 'react-chartjs-2';
 import {
     Users,
     Shield,
@@ -32,7 +33,8 @@ import {
     TrendingUp,
     UserSearch,
     Sparkles,
-    Loader2
+    Loader2,
+    Info
 } from 'lucide-react';
 import type { Timeframe, ChannelData } from './reportUtils';
 import {
@@ -47,7 +49,12 @@ import {
     computeHourlyHeatmap,
     computeReplyStats,
     computeContentStats,
-    computeModResponseTimes
+    computeModResponseTimes,
+    computeWordCloud,
+    computePeakHours,
+    computeThreadDepth,
+    computeQAStats,
+    computeInteractionNetwork
 } from './reportUtils';
 import './ReportView.css';
 
@@ -122,7 +129,8 @@ ChartJS.register(
     Filler,
     Tooltip,
     Legend,
-    ArcElement
+    ArcElement,
+    RadialLinearScale
 );
 
 // Global chart defaults
@@ -387,6 +395,11 @@ export default function ReportView({ data: rawData, geminiApiKey, onClose }: Rep
     const topContributors = useMemo(() => computeTopContributors(activeData), [activeData]);
     const heatmap = useMemo(() => computeHourlyHeatmap(activeData), [activeData]);
     const contentStats = useMemo(() => computeContentStats(activeData), [activeData]);
+    const wordCloudData = useMemo(() => computeWordCloud(activeData), [activeData]);
+    const peakHours = useMemo(() => computePeakHours(activeData), [activeData]);
+    const threadDepth = useMemo(() => computeThreadDepth(activeData), [activeData]);
+    const qaStats = useMemo(() => computeQAStats(activeData), [activeData]);
+    const interactionNetwork = useMemo(() => computeInteractionNetwork(activeData), [activeData]);
 
     // Mod Analytics directly read from data but strictly filtered by mod engagement hooks over global timelines
     const replyStats = useMemo(() => {
@@ -685,6 +698,328 @@ export default function ReportView({ data: rawData, geminiApiKey, onClose }: Rep
     }), [topContributors]);
 
     const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    // ─── Peak Hours Polar Chart Data ─────────────────
+    const polarChartData = useMemo(() => ({
+        labels: peakHours.map(h => h.label),
+        datasets: [{
+            data: peakHours.map(h => h.total),
+            backgroundColor: peakHours.map((_, i) => {
+                const hue = (i / 24) * 360;
+                return `hsla(${hue}, 70%, 55%, 0.6)`;
+            }),
+            borderColor: peakHours.map((_, i) => {
+                const hue = (i / 24) * 360;
+                return `hsla(${hue}, 70%, 55%, 1)`;
+            }),
+            borderWidth: 1,
+        }],
+    }), [peakHours]);
+
+    // ─── Thread Depth Bar Chart Data ─────────────────
+    const threadDepthChartData = useMemo(() => ({
+        labels: threadDepth.histogram.map(h => `Depth ${h.depth}`),
+        datasets: [{
+            label: 'Conversation Chains',
+            data: threadDepth.histogram.map(h => h.count),
+            backgroundColor: threadDepth.histogram.map((_, i) => PALETTE[i % PALETTE.length] + 'CC'),
+            borderColor: threadDepth.histogram.map((_, i) => PALETTE[i % PALETTE.length]),
+            borderWidth: 1,
+            borderRadius: 6,
+        }],
+    }), [threadDepth]);
+
+    // ─── QA Stats Doughnut Data ──────────────────────
+    const qaDoughnutData = useMemo(() => ({
+        labels: ['Answered', 'Unanswered'],
+        datasets: [{
+            data: [qaStats.answeredQuestions, qaStats.unansweredQuestions],
+            backgroundColor: ['#43e5a0CC', '#ef4444CC'],
+            borderColor: ['#43e5a0', '#ef4444'],
+            borderWidth: 2,
+        }],
+    }), [qaStats]);
+
+    // ─── Word Cloud Canvas Component ─────────────────
+    const WordCloudCanvas = useCallback(({ words }: { words: { text: string; value: number }[] }) => {
+        const canvasRef = useRef<HTMLCanvasElement>(null);
+
+        useEffect(() => {
+            const canvas = canvasRef.current;
+            if (!canvas || words.length === 0) return;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+            ctx.clearRect(0, 0, rect.width, rect.height);
+
+            const maxVal = words[0]?.value || 1;
+            const minVal = words[words.length - 1]?.value || 1;
+            const minFont = 11;
+            const maxFont = 42;
+
+            // Intensity color: gray (low freq) → orange → red (high freq)
+            const getIntensityColor = (value: number) => {
+                const t = maxVal === minVal ? 1 : (value - minVal) / (maxVal - minVal);
+                // Gray (#6b7280) → Orange (#f59e42) → Red (#ef4444)
+                if (t < 0.5) {
+                    const s = t * 2; // 0..1 within gray→orange
+                    const r = Math.round(107 + s * (245 - 107));
+                    const g = Math.round(114 + s * (158 - 114));
+                    const b = Math.round(128 + s * (66 - 128));
+                    return `rgb(${r},${g},${b})`;
+                } else {
+                    const s = (t - 0.5) * 2; // 0..1 within orange→red
+                    const r = Math.round(245 + s * (239 - 245));
+                    const g = Math.round(158 + s * (68 - 158));
+                    const b = Math.round(66 + s * (68 - 66));
+                    return `rgb(${r},${g},${b})`;
+                }
+            };
+
+            // Place words using spiral placement
+            const placed: { x: number; y: number; w: number; h: number }[] = [];
+            const centerX = rect.width / 2;
+            const centerY = rect.height / 2;
+
+            for (let i = 0; i < words.length; i++) {
+                const word = words[i];
+                const fontSize = minFont + ((word.value / maxVal) ** 0.5) * (maxFont - minFont);
+                const fontSizeRounded = Math.round(fontSize * 10) / 10;
+                const isBold = fontSizeRounded >= 24;
+                ctx.font = `${isBold ? 'bold ' : ''}${fontSizeRounded}px Inter, sans-serif`;
+                ctx.fillStyle = getIntensityColor(word.value);
+
+                const metrics = ctx.measureText(word.text);
+                // Measure the count label to include in total width
+                const countStr = word.value.toLocaleString();
+                const countFontSize = Math.max(8, fontSizeRounded * 0.45);
+                ctx.font = `${countFontSize}px Inter, sans-serif`;
+                const countW = ctx.measureText(countStr).width + 4;
+                ctx.font = `${isBold ? 'bold ' : ''}${fontSizeRounded}px Inter, sans-serif`;
+
+                const textW = metrics.width + countW + 8;
+                const textH = fontSize + 4;
+
+                // Spiral outward to find a non-overlapping position
+                let px = 0, py = 0, foundSpot = false;
+                for (let t = 0; t < 600; t++) {
+                    const angle = t * 0.18;
+                    const radius = 3 + t * 1.2;
+                    px = centerX + Math.cos(angle) * radius - textW / 2;
+                    py = centerY + Math.sin(angle) * radius + textH / 4;
+
+                    // Bounds check
+                    if (px < 2 || px + textW > rect.width - 2 || py - textH < 2 || py > rect.height - 2) continue;
+
+                    // Overlap check
+                    let overlaps = false;
+                    for (const p of placed) {
+                        if (px < p.x + p.w && px + textW > p.x && py - textH < p.y && py > p.y - p.h) {
+                            overlaps = true;
+                            break;
+                        }
+                    }
+                    if (!overlaps) { foundSpot = true; break; }
+                }
+                if (!foundSpot) continue;
+
+                // Draw the word
+                ctx.font = `${isBold ? 'bold ' : ''}${fontSizeRounded}px Inter, sans-serif`;
+                ctx.fillText(word.text, px, py);
+
+                // Draw the count number beside the word (smaller, slightly transparent)
+                ctx.font = `${countFontSize}px Inter, sans-serif`;
+                ctx.globalAlpha = 0.55;
+                ctx.fillText(countStr, px + metrics.width + 4, py);
+                ctx.globalAlpha = 1.0;
+
+                placed.push({ x: px, y: py, w: textW, h: textH });
+            }
+        }, [words]);
+
+        return <canvas ref={canvasRef} style={{ width: '100%', height: '320px', display: 'block' }} />;
+    }, []);
+
+    // ─── Network Graph Canvas Component ──────────────
+    const NetworkGraphCanvas = useCallback(({ network }: { network: { nodes: { id: string; messageCount: number }[]; links: { source: string; target: string; weight: number }[] } }) => {
+        const canvasRef = useRef<HTMLCanvasElement>(null);
+        const animFrameRef = useRef<number>(0);
+
+        useEffect(() => {
+            const canvas = canvasRef.current;
+            if (!canvas || network.nodes.length === 0) return;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+
+            const W = rect.width;
+            const H = rect.height;
+            const colors = ['#7c6aef', '#56b4f9', '#43e5a0', '#f59e42', '#ec4899', '#2dd4bf', '#fbbf24', '#a78bfa', '#f97316', '#6366f1'];
+            const maxMsgCount = Math.max(...network.nodes.map(n => n.messageCount), 1);
+            const maxWeight = Math.max(...network.links.map(l => l.weight), 1);
+
+            // Initialize node positions in a circle
+            type SimNode = { id: string; x: number; y: number; vx: number; vy: number; radius: number; color: string; messageCount: number };
+            const simNodes: SimNode[] = network.nodes.map((n, i) => {
+                const angle = (i / network.nodes.length) * Math.PI * 2;
+                const r = Math.min(W, H) * 0.3;
+                return {
+                    id: n.id,
+                    x: W / 2 + Math.cos(angle) * r,
+                    y: H / 2 + Math.sin(angle) * r,
+                    vx: 0, vy: 0,
+                    radius: 6 + (n.messageCount / maxMsgCount) * 18,
+                    color: colors[i % colors.length],
+                    messageCount: n.messageCount,
+                };
+            });
+
+            const nodeMap = new Map(simNodes.map(n => [n.id, n]));
+
+            // Mouse tracking for tooltip
+            let mouseX = -1, mouseY = -1;
+            let hoveredNode: SimNode | null = null;
+
+            const handleMouseMove = (e: MouseEvent) => {
+                const r = canvas.getBoundingClientRect();
+                mouseX = e.clientX - r.left;
+                mouseY = e.clientY - r.top;
+                hoveredNode = null;
+                for (const n of simNodes) {
+                    const dx = n.x - mouseX, dy = n.y - mouseY;
+                    if (Math.sqrt(dx * dx + dy * dy) < n.radius + 4) {
+                        hoveredNode = n;
+                        break;
+                    }
+                }
+                canvas.style.cursor = hoveredNode ? 'pointer' : 'default';
+            };
+            canvas.addEventListener('mousemove', handleMouseMove);
+
+            let frame = 0;
+            const simulate = () => {
+                ctx.clearRect(0, 0, W, H);
+                frame++;
+
+                // Physics: repulsion between all nodes
+                for (let i = 0; i < simNodes.length; i++) {
+                    for (let j = i + 1; j < simNodes.length; j++) {
+                        const a = simNodes[i], b = simNodes[j];
+                        let dx = b.x - a.x, dy = b.y - a.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                        const force = 800 / (dist * dist);
+                        const fx = (dx / dist) * force, fy = (dy / dist) * force;
+                        a.vx -= fx; a.vy -= fy;
+                        b.vx += fx; b.vy += fy;
+                    }
+                }
+
+                // Attraction along links
+                for (const link of network.links) {
+                    const a = nodeMap.get(link.source);
+                    const b = nodeMap.get(link.target);
+                    if (!a || !b) continue;
+                    const dx = b.x - a.x, dy = b.y - a.y;
+                    const strength = 0.005 * (link.weight / maxWeight);
+                    const fx = dx * strength, fy = dy * strength;
+                    a.vx += fx; a.vy += fy;
+                    b.vx -= fx; b.vy -= fy;
+                }
+
+                // Gravity toward center
+                for (const n of simNodes) {
+                    n.vx += (W / 2 - n.x) * 0.001;
+                    n.vy += (H / 2 - n.y) * 0.001;
+                }
+
+                // Apply velocity with damping
+                const damping = frame < 100 ? 0.85 : 0.95;
+                for (const n of simNodes) {
+                    n.vx *= damping; n.vy *= damping;
+                    n.x += n.vx; n.y += n.vy;
+                    // Bounds
+                    n.x = Math.max(n.radius + 4, Math.min(W - n.radius - 4, n.x));
+                    n.y = Math.max(n.radius + 4, Math.min(H - n.radius - 4, n.y));
+                }
+
+                // Draw links
+                for (const link of network.links) {
+                    const a = nodeMap.get(link.source);
+                    const b = nodeMap.get(link.target);
+                    if (!a || !b) continue;
+                    ctx.beginPath();
+                    ctx.moveTo(a.x, a.y);
+                    ctx.lineTo(b.x, b.y);
+                    ctx.strokeStyle = `rgba(124, 106, 239, ${0.1 + (link.weight / maxWeight) * 0.4})`;
+                    ctx.lineWidth = 0.5 + (link.weight / maxWeight) * 3;
+                    ctx.stroke();
+                }
+
+                // Draw nodes
+                for (const n of simNodes) {
+                    // Glow for hovered node
+                    if (hoveredNode === n) {
+                        ctx.beginPath();
+                        ctx.arc(n.x, n.y, n.radius + 6, 0, Math.PI * 2);
+                        ctx.fillStyle = n.color + '30';
+                        ctx.fill();
+                    }
+
+                    ctx.beginPath();
+                    ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
+                    ctx.fillStyle = n.color;
+                    ctx.fill();
+                    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+
+                    // Label
+                    ctx.font = `${n.radius > 12 ? 11 : 9}px Inter, sans-serif`;
+                    ctx.fillStyle = '#e5e7eb';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(n.id.length > 14 ? n.id.slice(0, 12) + '…' : n.id, n.x, n.y + n.radius + 14);
+                }
+
+                // Tooltip
+                if (hoveredNode) {
+                    const n = hoveredNode;
+                    const tooltipText = `${n.id} — ${n.messageCount} messages`;
+                    ctx.font = 'bold 12px Inter, sans-serif';
+                    const tw = ctx.measureText(tooltipText).width + 16;
+                    const tx = Math.min(n.x - tw / 2, W - tw - 4);
+                    const ty = n.y - n.radius - 28;
+                    ctx.fillStyle = 'rgba(17, 17, 26, 0.92)';
+                    ctx.beginPath();
+                    ctx.roundRect(tx, ty, tw, 24, 6);
+                    ctx.fill();
+                    ctx.fillStyle = '#fff';
+                    ctx.textAlign = 'left';
+                    ctx.fillText(tooltipText, tx + 8, ty + 16);
+                }
+
+                animFrameRef.current = requestAnimationFrame(simulate);
+            };
+
+            simulate();
+
+            return () => {
+                cancelAnimationFrame(animFrameRef.current);
+                canvas.removeEventListener('mousemove', handleMouseMove);
+            };
+        }, [network]);
+
+        return <canvas ref={canvasRef} style={{ width: '100%', height: '400px', display: 'block' }} />;
+    }, []);
 
     return (
         <div className="report-overlay">
@@ -1037,6 +1372,7 @@ export default function ReportView({ data: rawData, geminiApiKey, onClose }: Rep
                             <div className="report-section-title" style={{ justifyContent: 'space-between', display: 'flex', width: '100%' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     <CalendarDays size={18} /> Activity Timeline
+                                    <span className="section-info-tooltip"><Info size={14} /><span className="section-info-text">Shows message volume over time. Switch between hourly, daily, or weekly views and compare activity across channels.</span></span>
                                 </div>
                                 <div className="timeframe-toggle-container">
                                     {!timelineAggregated && (
@@ -1094,7 +1430,7 @@ export default function ReportView({ data: rawData, geminiApiKey, onClose }: Rep
                         {/* ─── Channel Comparison + Top Contributors ─── */}
                         <div className="report-two-col">
                             <div className="report-section">
-                                <div className="report-section-title"><BarChart3 size={18} /> Channel Comparison</div>
+                                <div className="report-section-title"><BarChart3 size={18} /> Channel Comparison <span className="section-info-tooltip"><Info size={14} /><span className="section-info-text">Compare message volume across all exported channels. Taller bars indicate more active channels.</span></span></div>
                                 <div className="report-chart-card">
                                     <Bar
                                         data={channelChartData}
@@ -1115,7 +1451,7 @@ export default function ReportView({ data: rawData, geminiApiKey, onClose }: Rep
                             </div>
 
                             <div className="report-section">
-                                <div className="report-section-title"><Users size={18} /> Top Contributors</div>
+                                <div className="report-section-title"><Users size={18} /> Top Contributors <span className="section-info-tooltip"><Info size={14} /><span className="section-info-text">The most active users by total message count. Click a user in the doughnut chart to view their profile in User Spotlight.</span></span></div>
                                 <div className="report-chart-card">
                                     <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
                                         <div style={{ flex: '0 0 160px' }}>
@@ -1173,39 +1509,196 @@ export default function ReportView({ data: rawData, geminiApiKey, onClose }: Rep
                             </div>
                         </div>
 
-                        {/* ─── Hourly Heatmap ─── */}
-                        <div className="report-section">
-                            <div className="report-section-title"><Clock size={18} /> Activity Heatmap</div>
-                            <div className="report-chart-card">
-                                <div className="heatmap-grid">
-                                    {/* Hour labels row */}
-                                    <div />
-                                    {Array.from({ length: 24 }, (_, h) => (
-                                        <div key={`h${h}`} className="heatmap-hour-label">{h === 0 ? '12a' : h < 12 ? `${h}a` : h === 12 ? '12p' : `${h - 12}p`}</div>
-                                    ))}
-                                    {/* Data rows */}
-                                    {DAY_NAMES.map((day, di) => (
-                                        <>
-                                            <div key={`l${di}`} className="heatmap-label">{day}</div>
-                                            {heatmap[di].map((val: number, hi: number) => (
-                                                <div
-                                                    key={`c${di}-${hi}`}
-                                                    className="heatmap-cell"
-                                                    style={{ backgroundColor: heatColor(val) }}
-                                                    title={`${day} ${hi}:00 — ${val} messages`}
-                                                />
-                                            ))}
-                                        </>
-                                    ))}
+                        {/* ─── Hourly Heatmap + Peak Hours Polar ─── */}
+                        <div className="report-two-col">
+                            <div className="report-section">
+                                <div className="report-section-title"><Clock size={18} /> Activity Heatmap <span className="section-info-tooltip"><Info size={14} /><span className="section-info-text">A day-of-week × hour-of-day grid showing when the server is busiest. Brighter cells mean more messages at that time.</span></span></div>
+                                <div className="report-chart-card">
+                                    <div className="heatmap-grid">
+                                        {/* Hour labels row */}
+                                        <div />
+                                        {Array.from({ length: 24 }, (_, h) => (
+                                            <div key={`h${h}`} className="heatmap-hour-label">{h === 0 ? '12a' : h < 12 ? `${h}a` : h === 12 ? '12p' : `${h - 12}p`}</div>
+                                        ))}
+                                        {/* Data rows */}
+                                        {DAY_NAMES.map((day, di) => (
+                                            <>
+                                                <div key={`l${di}`} className="heatmap-label">{day}</div>
+                                                {heatmap[di].map((val: number, hi: number) => (
+                                                    <div
+                                                        key={`c${di}-${hi}`}
+                                                        className="heatmap-cell"
+                                                        style={{ backgroundColor: heatColor(val) }}
+                                                        title={`${day} ${hi}:00 — ${val} messages`}
+                                                    />
+                                                ))}
+                                            </>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="report-section">
+                                <div className="report-section-title"><TrendingUp size={18} /> When Is the Server Most Alive? <span className="section-info-tooltip"><Info size={14} /><span className="section-info-text">A radial chart showing total messages per hour of the day. Larger slices indicate peak activity hours — great for scheduling announcements.</span></span></div>
+                                <div className="report-chart-card">
+                                    <PolarArea
+                                        data={polarChartData}
+                                        options={{
+                                            responsive: true,
+                                            plugins: {
+                                                legend: { display: false },
+                                                tooltip: {
+                                                    backgroundColor: 'rgba(17,17,26,0.95)',
+                                                    padding: 12,
+                                                    cornerRadius: 8,
+                                                    callbacks: {
+                                                        label: (ctx: any) => `${ctx.label}: ${ctx.raw.toLocaleString()} messages`
+                                                    }
+                                                },
+                                            },
+                                            scales: {
+                                                r: {
+                                                    grid: { color: 'rgba(255,255,255,0.06)' },
+                                                    ticks: { display: false },
+                                                },
+                                            },
+                                        }}
+                                    />
+                                    <div style={{ textAlign: 'center', fontSize: '11px', color: '#6b7280', marginTop: '8px' }}>
+                                        Peak: {peakHours.reduce((max, h) => h.total > max.total ? h : max, peakHours[0])?.label || '—'} ({peakHours.reduce((max, h) => h.total > max.total ? h : max, peakHours[0])?.total.toLocaleString()} msgs)
+                                    </div>
                                 </div>
                             </div>
                         </div>
+
+                        {/* ─── Thread Depth + Questions vs Answers ─── */}
+                        {viewMode === 'global' && (
+                            <div className="report-two-col">
+                                <div className="report-section">
+                                    <div className="report-section-title"><MessageSquare size={18} /> Conversation Thread Depth <span className="section-info-tooltip"><Info size={14} /><span className="section-info-text">Measures how deep reply chains go. Higher depth means more back-and-forth engagement. Reply Rate shows what % of messages are replies.</span></span></div>
+                                    <div className="report-chart-card">
+                                        <div className="stat-pill-row">
+                                            <div className="stat-pill"><strong>{threadDepth.replyPercentage}%</strong> Reply Rate</div>
+                                            <div className="stat-pill"><strong>{threadDepth.avgDepth}</strong> Avg Depth</div>
+                                            <div className="stat-pill"><strong>{threadDepth.maxDepth}</strong> Max Depth</div>
+                                            <div className="stat-pill"><strong>{threadDepth.totalReplies.toLocaleString()}</strong> Total Replies</div>
+                                        </div>
+                                        {threadDepth.histogram.length > 0 ? (
+                                            <Bar
+                                                data={threadDepthChartData}
+                                                options={{
+                                                    responsive: true,
+                                                    plugins: {
+                                                        legend: { display: false },
+                                                        tooltip: { backgroundColor: 'rgba(17,17,26,0.95)', padding: 12, cornerRadius: 8 },
+                                                    },
+                                                    scales: {
+                                                        x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+                                                        y: { beginAtZero: true, ticks: { precision: 0 } },
+                                                    },
+                                                }}
+                                                height={80}
+                                            />
+                                        ) : (
+                                            <div style={{ opacity: 0.5, fontSize: '13px', textAlign: 'center', marginTop: '30px' }}>No reply chains detected.</div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="report-section">
+                                    <div className="report-section-title"><Reply size={18} /> Questions vs Answers <span className="section-info-tooltip"><Info size={14} /><span className="section-info-text">Detects messages with '?' as questions and checks if someone responded within the next 10 messages. Shows answer rate and top askers/answerers.</span></span></div>
+                                    <div className="report-chart-card">
+                                        <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
+                                            <div style={{ flex: '0 0 140px' }}>
+                                                <Doughnut
+                                                    data={qaDoughnutData}
+                                                    options={{
+                                                        responsive: true,
+                                                        cutout: '68%',
+                                                        plugins: {
+                                                            legend: { display: false },
+                                                            tooltip: { backgroundColor: 'rgba(17,17,26,0.95)', padding: 12, cornerRadius: 8 },
+                                                        },
+                                                    }}
+                                                />
+                                                <div style={{ textAlign: 'center', fontSize: '20px', fontWeight: 'bold', marginTop: '8px', color: '#43e5a0' }}>
+                                                    {qaStats.answerRate}%
+                                                </div>
+                                                <div style={{ textAlign: 'center', fontSize: '11px', color: '#6b7280' }}>Answer Rate</div>
+                                            </div>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div className="stat-pill-row" style={{ marginBottom: '12px' }}>
+                                                    <div className="stat-pill"><strong>{qaStats.totalQuestions}</strong> Questions</div>
+                                                    <div className="stat-pill" style={{ color: '#43e5a0' }}><strong>{qaStats.answeredQuestions}</strong> Answered</div>
+                                                    <div className="stat-pill" style={{ color: '#ef4444' }}><strong>{qaStats.unansweredQuestions}</strong> Unanswered</div>
+                                                </div>
+                                                {qaStats.topAskers.length > 0 && (
+                                                    <>
+                                                        <p style={{ fontSize: '11px', color: '#6b7280', marginBottom: '4px' }}>Top Askers</p>
+                                                        {qaStats.topAskers.map((u, i) => (
+                                                            <div key={i} className="rank-bar-container">
+                                                                <div className="rank-bar-header">
+                                                                    <span className="rank-bar-name">{u.name}</span>
+                                                                    <span className="rank-bar-count">{u.count}</span>
+                                                                </div>
+                                                                <div className="rank-bar-track">
+                                                                    <div className="rank-bar-fill" style={{ width: `${(u.count / (qaStats.topAskers[0]?.count || 1)) * 100}%`, background: 'linear-gradient(90deg, #f59e42, #f59e4288)' }} />
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </>
+                                                )}
+                                                {qaStats.topAnswerers.length > 0 && (
+                                                    <>
+                                                        <p style={{ fontSize: '11px', color: '#6b7280', marginBottom: '4px', marginTop: '12px' }}>Top Answerers</p>
+                                                        {qaStats.topAnswerers.slice(0, 3).map((u, i) => (
+                                                            <div key={i} className="rank-bar-container">
+                                                                <div className="rank-bar-header">
+                                                                    <span className="rank-bar-name">{u.name}</span>
+                                                                    <span className="rank-bar-count">{u.count}</span>
+                                                                </div>
+                                                                <div className="rank-bar-track">
+                                                                    <div className="rank-bar-fill" style={{ width: `${(u.count / (qaStats.topAnswerers[0]?.count || 1)) * 100}%`, background: 'linear-gradient(90deg, #43e5a0, #43e5a088)' }} />
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ─── Word Cloud ─── */}
+                        {viewMode === 'global' && wordCloudData.length > 0 && (
+                            <div className="report-section">
+                                <div className="report-section-title"><FileText size={18} /> Word Cloud <span className="section-info-tooltip"><Info size={14} /><span className="section-info-text">Most frequently used words across all messages. Redder and larger words appear more often. Gray words are less common. Numbers show exact count.</span></span></div>
+                                <div className="report-chart-card word-cloud-container">
+                                    <WordCloudCanvas words={wordCloudData} />
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ─── User Interaction Network ─── */}
+                        {viewMode === 'global' && interactionNetwork.nodes.length > 0 && interactionNetwork.links.length > 0 && (
+                            <div className="report-section">
+                                <div className="report-section-title"><Users size={18} /> User Interaction Network <span className="section-info-tooltip"><Info size={14} /><span className="section-info-text">A force-directed graph showing who replies to whom. Larger nodes = more messages. Thicker lines = more frequent interactions between users.</span></span></div>
+                                <div className="report-chart-card network-graph-container">
+                                    <NetworkGraphCanvas network={interactionNetwork} />
+                                    <div style={{ textAlign: 'center', fontSize: '11px', color: '#6b7280', marginTop: '8px' }}>
+                                        {interactionNetwork.nodes.length} users · {interactionNetwork.links.length} connections · Node size = message count · Edge thickness = reply frequency
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         {/* ─── Global Bottom Row ─── */}
                         {viewMode === 'global' && (
                             <div className="report-two-col">
                                 <div className="report-section">
-                                    <div className="report-section-title"><PieChart size={18} /> Content Breakdown</div>
+                                    <div className="report-section-title"><PieChart size={18} /> Content Breakdown <span className="section-info-tooltip"><Info size={14} /><span className="section-info-text">Categorizes all messages into text-only, messages with links, and messages with attachments (images, files, etc.).</span></span></div>
                                     <div className="report-chart-card">
                                         <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
                                             <div style={{ flex: '0 0 160px' }}>
@@ -1248,7 +1741,7 @@ export default function ReportView({ data: rawData, geminiApiKey, onClose }: Rep
                                     </div>
                                 </div>
                                 <div className="report-section">
-                                    <div className="report-section-title"><FileText size={18} /> Deep Content Stats</div>
+                                    <div className="report-section-title"><FileText size={18} /> Deep Content Stats <span className="section-info-tooltip"><Info size={14} /><span className="section-info-text">Average message length per channel — longer messages often indicate more thoughtful discussion or detailed support answers.</span></span></div>
                                     <div className="report-chart-card">
                                         <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px' }}>Avg. Message Length by Channel</p>
                                         {contentStats.avgLengthPerChannel.map((ch, i) => (

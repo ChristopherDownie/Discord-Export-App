@@ -147,6 +147,62 @@
     opacity: 0.6;
 }
 
+/* ─── Info Icon Tooltip ───────────────────────────────────────────────── */
+.section-info-tooltip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    cursor: help;
+    margin-left: 4px;
+    opacity: 0.4;
+    transition: opacity 0.2s;
+}
+
+.section-info-tooltip:hover {
+    opacity: 0.9;
+}
+
+.section-info-tooltip svg {
+    opacity: 1 !important;
+}
+
+.section-info-text {
+    display: none;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    top: calc(100% + 8px);
+    width: 280px;
+    padding: 10px 14px;
+    background: rgba(17, 17, 26, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    color: #d1d5db;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.5;
+    z-index: 100;
+    pointer-events: none;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    animation: tooltipFadeIn 0.15s ease-out;
+}
+
+.section-info-tooltip:hover .section-info-text {
+    display: block;
+}
+
+@keyframes tooltipFadeIn {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+}
+
 /* ─── Chart Card ──────────────────────────────────────────────────────── */
 .report-chart-card {
     background: rgba(255, 255, 255, 0.03);
@@ -1395,4 +1451,31 @@
     100% {
         transform: translate(70px, -70px) rotate(-2deg);
     }
+}
+
+/* ─── Word Cloud ──────────────────────────────────────────────────────── */
+.word-cloud-container {
+    min-height: 320px;
+    position: relative;
+    overflow: hidden;
+}
+
+.word-cloud-container canvas {
+    border-radius: 12px;
+}
+
+/* ─── Network Graph ───────────────────────────────────────────────────── */
+.network-graph-container {
+    min-height: 400px;
+    position: relative;
+    overflow: hidden;
+}
+
+.network-graph-container canvas {
+    border-radius: 12px;
+}
+
+/* ─── Heatmap overflow fix when in two-col ─────────────────────────── */
+.report-two-col .heatmap-grid {
+    overflow-x: auto;
 }
