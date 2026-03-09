@@ -523,39 +523,59 @@ export default function ReportView({ data: rawData, geminiApiKey, onClose }: Rep
             };
 
             // 1. Fetch available models for this API Key so we don't hardcode a 404ing model string
-            const modelsResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${geminiApiKey}`);
-            let targetModel = 'models/gemini-1.5-flash';
+            let targetModel = 'models/gemini-2.0-flash';
             let usableModelNamesStr = '';
 
-            if (modelsResponse.ok) {
-                const modelsJson = await modelsResponse.json();
-                const availableModels = modelsJson.models || [];
-                // Only consider models that support generateContent
-                const usableModels = availableModels.filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'));
-                usableModelNamesStr = usableModels.map((m: any) => m.name.replace('models/', '')).join(', ');
+            try {
+                // Use a 15-second timeout so the spinner doesn't hang forever
+                const modelsFetchController = new AbortController();
+                const modelsTimeout = setTimeout(() => modelsFetchController.abort(), 15000);
+                // Also abort if the user clicks Cancel
+                const onUserAbort = () => modelsFetchController.abort();
+                newController.signal.addEventListener('abort', onUserAbort);
 
-                // Priority list
-                const preferredModels = [
-                    'models/gemini-1.5-flash',
-                    'models/gemini-1.5-flash-latest',
-                    'models/gemini-1.5-pro',
-                    'models/gemini-pro',
-                    'models/gemini-1.0-pro'
-                ];
+                const modelsResponse = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models?key=${geminiApiKey}`,
+                    { signal: modelsFetchController.signal }
+                );
+                clearTimeout(modelsTimeout);
+                newController.signal.removeEventListener('abort', onUserAbort);
 
-                let foundPreferred = false;
-                for (const preferred of preferredModels) {
-                    if (usableModels.some((m: any) => m.name === preferred)) {
-                        targetModel = preferred;
-                        foundPreferred = true;
-                        break;
+                if (modelsResponse.ok) {
+                    const modelsJson = await modelsResponse.json();
+                    const availableModels = modelsJson.models || [];
+                    // Only consider models that support generateContent
+                    const usableModels = availableModels.filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'));
+                    usableModelNamesStr = usableModels.map((m: any) => m.name.replace('models/', '')).join(', ');
+
+                    // Priority list — updated to current Gemini model names
+                    const preferredModels = [
+                        'models/gemini-2.0-flash',
+                        'models/gemini-2.0-flash-lite',
+                        'models/gemini-2.5-pro',
+                        'models/gemini-1.5-flash',
+                        'models/gemini-1.5-pro',
+                    ];
+
+                    let foundPreferred = false;
+                    for (const preferred of preferredModels) {
+                        if (usableModels.some((m: any) => m.name === preferred)) {
+                            targetModel = preferred;
+                            foundPreferred = true;
+                            break;
+                        }
+                    }
+
+                    // Fallback to whichever model supports generation if preferred ones are missing
+                    if (!foundPreferred && usableModels.length > 0) {
+                        targetModel = usableModels[0].name;
                     }
                 }
-
-                // Fallback to whichever model supports generation if preferred ones are missing
-                if (!foundPreferred && usableModels.length > 0) {
-                    targetModel = usableModels[0].name;
-                }
+            } catch (modelListErr: any) {
+                // If cancelled by user, re-throw so the outer catch handles it
+                if (newController.signal.aborted) throw modelListErr;
+                // Otherwise just use the default model (timeout, network blip, etc.)
+                console.warn('Model list fetch failed, using default model:', modelListErr.message);
             }
 
             // 2. Execute against the chosen model

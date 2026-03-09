@@ -14,6 +14,8 @@ export interface Message {
 export interface ChannelData {
     channelName: string;
     messages: Message[];
+    serverId?: string;
+    channelId?: string;
 }
 
 // ─── Data Filtering & User Helpers ────────────────────────────────────────

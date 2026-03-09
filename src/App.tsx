@@ -509,9 +509,9 @@ function App() {
 
         let content = '';
         if (exportFormat === 'html') {
-          content = generateHTML(channel.name, msgs);
+          content = generateHTML(channel.name, msgs, serverId, channel.id);
         } else {
-          content = generateCSV(msgs);
+          content = generateCSV(msgs, serverId, channel.id);
         }
 
         const fileName = 'export_' + channel.name + '.' + exportFormat;
@@ -521,7 +521,7 @@ function App() {
         });
 
         // Store parsed messages for the report
-        collectedData.push({ channelName: channel.name, messages: msgs });
+        collectedData.push({ channelName: channel.name, messages: msgs, serverId, channelId: channel.id });
 
         setStatus(prev => ({ ...prev, completedChannels: i + 1, progress: ((i + 1) / selected.length) * 100 }));
       }
@@ -560,8 +560,17 @@ function App() {
     }
   };
 
-  const generateHTML = (name: string, msgs: any[]) => {
-    const rows = msgs.map((m, i) => `
+  const getMessageLink = (msgId: string, sId?: string, cId?: string) => {
+    if (!sId || !cId) return '';
+    // msgId may be composite (e.g. channelId-messageId), extract the snowflake
+    const parts = msgId.split('-');
+    const snowflake = parts[parts.length - 1];
+    return `https://discord.com/channels/${sId}/${cId}/${snowflake}`;
+  };
+
+  const generateHTML = (name: string, msgs: any[], sId?: string, cId?: string) => {
+    const rows = msgs.map((m, i) => {
+      return `
       <div class="message">
         <span class="num">#${i + 1}</span>
         <span class="author">${m.author}</span>
@@ -570,13 +579,33 @@ function App() {
         <div class="content">${m.content}</div>
         ${m.attachments.map((a: string) => `<img src="${a}" />`).join('')}
       </div>
-    `).join('');
+    `;
+    }).join('');
+
+    const linkRows = msgs.map((m, i) => {
+      const link = getMessageLink(m.id, sId, cId);
+      const preview = (m.content || '').substring(0, 80).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return `
+      <tr>
+        <td>${i + 1}</td>
+        <td>${m.author}</td>
+        <td>${new Date(m.timestamp).toLocaleString()}</td>
+        <td class="preview">${preview}${(m.content || '').length > 80 ? '…' : ''}</td>
+        <td>${link ? `<a href="${link}" target="_blank">Open in Discord</a>` : '—'}</td>
+      </tr>
+    `;
+    }).join('');
 
     return `
       <html>
         <head>
           <style>
             body { font-family: sans-serif; background: #313338; color: #dbdee1; padding: 20px; }
+            .tabs { display: flex; gap: 4px; margin-bottom: 20px; }
+            .tab { padding: 10px 24px; background: #2b2d31; color: #b5bac1; border: none; border-radius: 8px 8px 0 0; cursor: pointer; font-size: 14px; font-family: inherit; }
+            .tab.active { background: #404249; color: #f2f3f5; font-weight: bold; }
+            .tab-content { display: none; }
+            .tab-content.active { display: block; }
             .message { margin-bottom: 20px; border-bottom: 1px solid #4e5058; padding-bottom: 10px; }
             .num { color: #80848e; font-size: 0.8em; margin-right: 10px; }
             .author { font-weight: bold; color: #f2f3f5; }
@@ -584,23 +613,61 @@ function App() {
             .content { margin-top: 5px; white-space: pre-wrap; }
             .reply { color: #b5bac1; font-size: 0.9em; margin-bottom: 6px; display: flex; align-items: center; margin-top: 4px; }
             .reply strong { margin-right: 6px; }
-            .reply-spine { width: 20px; height: 12px; border-left: 2px solid #4e5058; border-top: 2px solid #4e5058; border-top-left-radius: 6px; margin-right: 8px; margin-top: 8px; align-self: flex-start;}
+            .reply-spine { width: 20px; height: 12px; border-left: 2px solid #4e5058; border-top: 2px solid #4e5058; border-top-left-radius: 6px; margin-right: 8px; margin-top: 8px; align-self: flex-start; }
             img { max-width: 400px; display: block; margin-top: 10px; border-radius: 8px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #4e5058; }
+            th { background: #2b2d31; color: #b5bac1; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+            td { color: #dbdee1; font-size: 13px; }
+            td.preview { color: #949ba4; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            a { color: #5865f2; text-decoration: none; }
+            a:hover { text-decoration: underline; }
           </style>
+          <script>
+            function switchTab(tabName) {
+              document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+              document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+              document.getElementById('tab-' + tabName).classList.add('active');
+              document.getElementById('content-' + tabName).classList.add('active');
+            }
+          </script>
         </head>
         <body>
           <h1>Export: ${name}</h1>
-          ${rows}
+          <div class="tabs">
+            <button class="tab active" id="tab-messages" onclick="switchTab('messages')">Messages</button>
+            <button class="tab" id="tab-links" onclick="switchTab('links')">Message Links</button>
+          </div>
+          <div class="tab-content active" id="content-messages">
+            ${rows}
+          </div>
+          <div class="tab-content" id="content-links">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Author</th>
+                  <th>Time</th>
+                  <th>Preview</th>
+                  <th>Link</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${linkRows}
+              </tbody>
+            </table>
+          </div>
         </body>
       </html>
     `;
   };
 
-  const generateCSV = (msgs: any[]) => {
-    const header = "ID,Timestamp,Author,Content,Reply Author,Reply Content,Attachments\n";
-    const body = msgs.map(m =>
-      `"${m.id}","${m.formattedTime}","${m.author}","${(m.content || '').replace(/"/g, '""')}","${m.replyAuthor}","${(m.replyText || '').replace(/"/g, '""')}","${m.attachments.join(';')}"`
-    ).join('\n');
+  const generateCSV = (msgs: any[], sId?: string, cId?: string) => {
+    const header = "ID,Timestamp,Author,Content,Reply Author,Reply Content,Attachments,Link\n";
+    const body = msgs.map(m => {
+      const link = getMessageLink(m.id, sId, cId);
+      return `"${m.id}","${m.formattedTime}","${m.author}","${(m.content || '').replace(/"/g, '""')}","${m.replyAuthor}","${(m.replyText || '').replace(/"/g, '""')}","${m.attachments.join(';')}","${link}"`;
+    }).join('\n');
     return header + body;
   };
 
@@ -769,7 +836,7 @@ function App() {
                         const data: ChannelData[] = result.report.data;
                         for (const ch of data) {
                           const sorted = ch.messages.sort((a: any, b: any) => a.timestamp - b.timestamp);
-                          const content = exportFormat === 'html' ? generateHTML(ch.channelName, sorted) : generateCSV(sorted);
+                          const content = exportFormat === 'html' ? generateHTML(ch.channelName, sorted, ch.serverId, ch.channelId) : generateCSV(sorted, ch.serverId, ch.channelId);
                           const channelDir = dir + '/' + ch.channelName;
                           const fileName = 'export_' + ch.channelName + '.' + exportFormat;
                           await (window as any).electronAPI.invoke('save-file', { filePath: channelDir + '/' + fileName, content });
