@@ -69,6 +69,8 @@ body {
   display: flex;
   height: 100vh;
   width: 100vw;
+  padding-top: 48px;
+  -webkit-app-region: drag; /* Make empty background space draggable as fallback */
 }
 
 /* Glass panel utility */
@@ -77,12 +79,13 @@ body {
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--border-glass);
+  -webkit-app-region: no-drag; /* interactive parts shouldn't drag */
 }
 
 /* Sidebar */
 .sidebar {
   width: 380px;
-  height: 100vh;
+  height: calc(100vh - 48px);
   display: flex;
   flex-direction: column;
   padding: 32px 24px 24px;
@@ -90,21 +93,20 @@ body {
   z-index: 10;
   overflow-y: auto;
   -webkit-app-region: no-drag;
-  /* Re-enable interaction inside */
 }
 
 /* Webview Area */
 .webview-container {
   flex: 1;
   position: relative;
-  height: 100vh;
+  height: calc(100vh - 48px);
   background: #1a1d24;
   -webkit-app-region: no-drag;
 }
 
 .webview-container webview {
   width: 100%;
-  height: 100vh;
+  height: 100%;
   display: flex !important;
   background: white;
   /* Discord has a white background usually */

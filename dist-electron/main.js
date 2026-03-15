@@ -11,7 +11,7 @@ function createWindow() {
     const mainWindow = new BrowserWindow({
         width: 1400,
         height: 900,
-        titleBarStyle: 'hiddenInset',
+        titleBarStyle: 'hidden',
         backgroundColor: '#0b0e14',
         webPreferences: {
             preload: path.join(__dirname, '..', 'electron', 'preload.cjs'),

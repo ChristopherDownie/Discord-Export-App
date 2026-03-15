@@ -686,8 +686,6 @@ function App() {
       {/* Animated Apple Mesh Gradient Background (behind everything) */}
       <div className="hero-background"></div>
 
-      {/* Titlebar for moving the frameless window */}
-      <div className="draggable-titlebar"></div>
 
       <aside className="sidebar glass-panel">
         <h1>
@@ -865,7 +863,7 @@ function App() {
       </aside>
 
       <main className="webview-container">
-        <webview ref={webviewRef} src="https://discord.com/app" style={{ width: '100%', height: '100vh' }} allowpopups={true} />
+        <webview ref={webviewRef} src="https://discord.com/app" style={{ width: '100%', height: '100%' }} allowpopups={true} />
       </main>
 
       {/* Progress Overlay */}
@@ -1018,6 +1016,9 @@ function App() {
           onClose={() => setShowReport(false)}
         />
       )}
+
+      {/* Titlebar for moving the frameless window — rendered last to sit on top */}
+      <div className="draggable-titlebar"></div>
     </div>
   );
 }
