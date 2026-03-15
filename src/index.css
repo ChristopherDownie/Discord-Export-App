@@ -61,9 +61,7 @@ body {
   min-height: 100vh;
   overflow: hidden;
 
-  /* Titlebar dragging */
-  -webkit-app-region: drag;
-  user-select: none;
+  /* Window dragging is handled by .draggable-titlebar only */
 }
 
 /* Base App Layout */
@@ -124,8 +122,6 @@ body {
   align-items: center;
   justify-content: center;
   transition: opacity 0.5s ease, visibility 0.5s ease;
-  -webkit-app-region: drag;
-  /* Allow dragging from the loading screen too */
 }
 
 .app-loading-screen.fade-out {

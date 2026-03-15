@@ -9,7 +9,10 @@
   position: fixed;
   top: 0;
   left: 0;
-  z-index: 100;
+  z-index: 9998;
+  pointer-events: auto;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .draggable-titlebar button {
