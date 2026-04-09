@@ -78,9 +78,22 @@ ipcMain.handle('open-folder', async (_event, folderPath) => {
   }
 });
 
+ipcMain.handle('open-external', async (_event, url) => {
+  try {
+    await shell.openExternal(url);
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+});
+
 ipcMain.handle('clear-session', async () => {
   try {
     await session.defaultSession.clearStorageData();
+    const discordSession = session.fromPartition('persist:discord');
+    if (discordSession) {
+      await discordSession.clearStorageData();
+    }
     return { success: true };
   } catch (e: any) {
     return { success: false, error: e.message };
@@ -204,6 +217,29 @@ ipcMain.handle('load-report', async (_event, reportId: string) => {
     const filePath = path.join(getReportsDir(), reportId + '.json');
     const raw = fs.readFileSync(filePath, 'utf-8');
     return { success: true, report: JSON.parse(raw) };
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle('save-insight', async (_event, { reportId, insight }) => {
+  try {
+    const filePath = path.join(getReportsDir(), reportId + '.json');
+    if (!fs.existsSync(filePath)) return { success: false, error: 'Report not found' };
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    const report = JSON.parse(raw);
+    if (!report.insights) report.insights = [];
+    
+    // Add unique ID and timestamp to insight if not present
+    const newInsight = {
+      ...insight,
+      id: insight.id || Date.now().toString(),
+      timestamp: insight.timestamp || new Date().toISOString()
+    };
+    
+    report.insights.push(newInsight);
+    fs.writeFileSync(filePath, JSON.stringify(report), 'utf-8');
+    return { success: true, insights: report.insights };
   } catch (e: any) {
     return { success: false, error: e.message };
   }

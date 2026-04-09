@@ -38,6 +38,7 @@ function App() {
   // Settings State
   const [showSettings, setShowSettings] = useState(false);
   const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [geminiModel, setGeminiModel] = useState('models/gemini-2.5-flash');
 
   // App Loading State
   const [isAppLoading, setIsAppLoading] = useState(true);
@@ -62,6 +63,7 @@ function App() {
         const res = await (window as any).electronAPI.invoke('load-settings');
         if (res?.success && res.settings) {
           if (res.settings.geminiApiKey) setGeminiApiKey(res.settings.geminiApiKey);
+          if (res.settings.geminiModel) setGeminiModel(res.settings.geminiModel);
         }
       } catch (err) {
         console.error("Failed to load settings:", err);
@@ -84,6 +86,10 @@ function App() {
   const [showReport, setShowReport] = useState(false);
   const [savedReports, setSavedReports] = useState<SavedReportSummary[]>([]);
   const [loadingReportId, setLoadingReportId] = useState<string | null>(null);
+  
+  // Current active report context
+  const [currentReportId, setCurrentReportId] = useState<string | null>(null);
+  const [currentInsights, setCurrentInsights] = useState<any[]>([]);
 
   const loadSavedReports = useCallback(async () => {
     if (!(window as any).electronAPI) return;
@@ -549,8 +555,11 @@ function App() {
           channelCount: collectedData.length,
           totalMessages: totalMsgs,
           data: collectedData,
+          insights: [],
         };
         await (window as any).electronAPI.invoke('save-report', report);
+        setCurrentReportId(reportId);
+        setCurrentInsights([]);
         loadSavedReports();
       }
 
@@ -816,6 +825,8 @@ function App() {
                           const result = await (window as any).electronAPI.invoke('load-report', report.id);
                           if (result?.success && result.report?.data) {
                             setExportData(result.report.data);
+                            setCurrentReportId(result.report.id);
+                            setCurrentInsights(result.report.insights || []);
                             setShowReport(true);
                           }
                         } catch (e) { console.error(e); }
@@ -863,7 +874,7 @@ function App() {
       </aside>
 
       <main className="webview-container">
-        <webview ref={webviewRef} src="https://discord.com/app" style={{ width: '100%', height: '100%' }} allowpopups={true} />
+        <webview ref={webviewRef} src="https://discord.com/app" style={{ width: '100%', height: '100%' }} allowpopups={true} partition="persist:discord" />
       </main>
 
       {/* Progress Overlay */}
@@ -979,6 +990,25 @@ function App() {
                 style={{ width: '100%', padding: '10px 12px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: '6px', color: '#fff', fontSize: '14px' }}
               />
             </div>
+            
+            <div className="form-group" style={{ marginBottom: '24px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Sparkles size={16} color="var(--accent-primary)" /> Gemini Model Preference
+              </label>
+              <p style={{ fontSize: '13px', color: 'var(--text-tertiary)', marginBottom: '8px', lineHeight: '1.4' }}>
+                Select which model engine powers the "Gather Insight" analysis feature.
+              </p>
+              <select
+                value={geminiModel}
+                onChange={e => setGeminiModel(e.target.value)}
+                style={{ width: '100%', padding: '10px 12px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: '6px', color: '#fff', fontSize: '14px', outline: 'none' }}
+              >
+                <option value="models/gemini-2.5-flash">Gemini 2.5 Flash (Fast, Efficient)</option>
+                <option value="models/gemini-2.5-pro">Gemini 2.5 Pro (Powerful, Higher Detail)</option>
+                <option value="models/gemini-1.5-flash">Gemini 1.5 Flash (Legacy)</option>
+                <option value="models/gemini-3.1-pro-preview">Gemini 3.1 Pro Preview (Experimental API access only)</option>
+              </select>
+            </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px' }}>
               <button
@@ -992,7 +1022,7 @@ function App() {
                 className="btn-primary"
                 onClick={async () => {
                   try {
-                    await (window as any).electronAPI.invoke('save-settings', { geminiApiKey });
+                    await (window as any).electronAPI.invoke('save-settings', { geminiApiKey, geminiModel });
                     setShowSettings(false);
                   } catch (e) {
                     console.error("Error saving settings", e);
@@ -1011,8 +1041,17 @@ function App() {
       {/* Analytics Report Overlay */}
       {showReport && exportData.length > 0 && (
         <ReportView
+          reportId={currentReportId}
+          initialInsights={currentInsights}
           data={exportData}
           geminiApiKey={geminiApiKey}
+          geminiModel={geminiModel}
+          setGeminiModel={async (m) => {
+            setGeminiModel(m);
+            try { 
+              await (window as any).electronAPI.invoke('save-settings', { geminiApiKey, geminiModel: m }); 
+            } catch(e) {}
+          }}
           onClose={() => setShowReport(false)}
         />
       )}

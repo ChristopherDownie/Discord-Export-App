@@ -56,6 +56,8 @@ import {
     computeQAStats,
     computeInteractionNetwork
 } from './reportUtils';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import './ReportView.css';
 
 function SearchableDropdown({ options, value, onChange, placeholder }: { options: { value: string, label: string }[], value: string, onChange: (val: string) => void, placeholder: string }) {
@@ -140,7 +142,11 @@ ChartJS.defaults.font.family = "'Inter', sans-serif";
 
 interface ReportViewProps {
     data: ChannelData[];
-    geminiApiKey?: string;
+    geminiApiKey: string;
+    geminiModel?: string;
+    setGeminiModel?: (m: string) => void;
+    reportId?: string | null;
+    initialInsights?: any[];
     onClose: () => void;
 }
 
@@ -295,7 +301,7 @@ const ParticleBackground = () => {
 };
 
 
-export default function ReportView({ data: rawData, geminiApiKey, onClose }: ReportViewProps) {
+export default function ReportView({ data: rawData, geminiApiKey, geminiModel = 'models/gemini-2.0-flash', setGeminiModel, reportId, initialInsights, onClose }: ReportViewProps) {
     // Normalize user names on mount using NFKC Form (Compatibility Composition).
     // This forcibly flattens stylized Discord text characters (e.g. Mathematical Sans-Serif Bold 𝗠𝗶𝗰𝗸𝘆 -> Micky) 
     // into standard plaintext Latin strings so our SearchableDropdowns and `filterDataByMods` logic matches flawlessly.
@@ -422,6 +428,7 @@ export default function ReportView({ data: rawData, geminiApiKey, onClose }: Rep
     const [abortController, setAbortController] = useState<AbortController | null>(null);
 
     const [activePrompts, setActivePrompts] = useState<string[]>(ALL_PRESET_PROMPTS.slice(0, 4));
+    const [savedInsights, setSavedInsights] = useState<any[]>(initialInsights || []);
 
     const handlePromptClick = (clickedPrompt: string) => {
         // Append to textarea 
@@ -460,25 +467,31 @@ export default function ReportView({ data: rawData, geminiApiKey, onClose }: Rep
         let logTargetName = aiSelectedChannel;
 
         if (aiSelectedChannel === 'all_channels') {
-            logTargetName = "All Server Channels";
-            // Combine all active channels
-            const combinedMsgs: { author: string, content: string, timestamp: number }[] = [];
+            logTargetName = 'All Server Channels';
+            const combinedMsgs: { author: string, content: string, timestamp: number, serverId?: string, channelId?: string, id: string }[] = [];
             activeData.forEach(ch => {
                 ch.messages.forEach(m => {
                     if (m.content && m.content.trim().length > 0) {
-                        // Prepend channel name so the AI knows where it came from
                         combinedMsgs.push({
-                            author: `#${ch.channelName} - ${m.author}`,
+                            author: m.author,
                             content: m.content,
-                            timestamp: m.timestamp
+                            timestamp: m.timestamp,
+                            serverId: (ch as any).serverId,
+                            channelId: (ch as any).channelId,
+                            id: m.id
                         });
                     }
                 });
             });
-            // Sort absolute chronologically
             combinedMsgs.sort((a, b) => a.timestamp - b.timestamp);
 
-            condensedLog = combinedMsgs.map(m => `${m.author}: ${m.content}`).join('\n');
+            condensedLog = combinedMsgs
+                .map(m => {
+                    const date = new Date(m.timestamp).toLocaleDateString();
+                    const url = m.serverId && m.channelId ? `https://discord.com/channels/${m.serverId}/${m.channelId}/${m.id}` : m.id;
+                    return `[${date}] [${url}] ${m.author}: ${m.content}`;
+                })
+                .join('\n');
 
             if (condensedLog.length === 0) {
                 setAiError(`No text messages found in any channel to analyze.`);
@@ -495,110 +508,92 @@ export default function ReportView({ data: rawData, geminiApiKey, onClose }: Rep
                 setAbortController(null);
                 return;
             }
-            // Condense the chat logs to save tokens
-            // Sort to ensure chronological order for the AI to understand conversation flow
             const sortedMsgs = [...channelData.messages].sort((a, b) => a.timestamp - b.timestamp);
 
-            // Format strictly as <Author>: <Message> to minimize token overhead
-            // Skip media-only/empty text messages
             condensedLog = sortedMsgs
                 .filter(m => m.content && m.content.trim().length > 0)
-                .map(m => `${m.author}: ${m.content}`)
+                .map(m => {
+                    const date = new Date(m.timestamp).toLocaleDateString();
+                    const url = (channelData as any).serverId && (channelData as any).channelId ? `https://discord.com/channels/${(channelData as any).serverId}/${(channelData as any).channelId}/${m.id}` : m.id;
+                    return `[${date}] [${url}] ${m.author}: ${m.content}`;
+                })
                 .join('\n');
         }
 
         try {
-            const payloadBox = {
-                contents: [
-                    {
-                        parts: [
-                            { text: `Here is the message log for ${logTargetName}:\n\n${condensedLog}\n\nBased on these logs, please answer the following request:\n${aiPrompt}\n\nCRITICAL INSTRUCTION: Do NOT mention your persona ("As an expert discord manager..."). Do NOT repeat these instructions. Do NOT include an introductory sentence or phrase. Provide ONLY the final answer.` }
-                        ]
-                    }
-                ],
-                // We're asking for strict analysis, so lower temperature is better.
-                generationConfig: {
-                    temperature: 0.2,
-                }
-            };
+            const standardInstruction = `CRITICAL INSTRUCTION: You must strictly structure your response into the following markdown sections, adapting the user's request into this format appropriately. Use emojis in the headings:\n\n## 📊 Executive Summary\n## 📸 Discussion Snapshot\n## 🧠 Sentiment and Conversation Tone\n## 🎯 Main Themes in the Conversation\n## 📡 Representative Signals\n## ❓ What Seems Unresolved\n## 💡 Feature Requests and Product Asks\n## 🚀 Implications for Product and Community\n## 📋 Recommended Near-Term Actions\n## 🏁 Closing Assessment\n\nFor each feature, theme, or topic a report is made on, you MUST include a count number beside it to indicate exactly how many messages were used for that specific item (e.g., 'Dark Mode (14 messages)').\n\nDo not use introductory filler (e.g. "Here is the summary..."). Provide ONLY the requested markdown report.`;
+            
+            const verificationInstruction = `CRITICAL INSTRUCTION: You must strictly structure your response into the following markdown table containing direct evidence for the claims in your report. The table must have these columns:\n\n| Date | Channel | Issue/Theme | Evidence summary | Discord link |\n|---|---|---|---|---|\n\nDo not use introductory filler. Provide ONLY the requested markdown table, mapping specific user claims to the exact URLs provided in the logs.`;
 
-            // 1. Fetch available models for this API Key so we don't hardcode a 404ing model string
-            let targetModel = 'models/gemini-2.0-flash';
-            let usableModelNamesStr = '';
-
-            try {
-                // Use a 15-second timeout so the spinner doesn't hang forever
-                const modelsFetchController = new AbortController();
-                const modelsTimeout = setTimeout(() => modelsFetchController.abort(), 15000);
-                // Also abort if the user clicks Cancel
-                const onUserAbort = () => modelsFetchController.abort();
-                newController.signal.addEventListener('abort', onUserAbort);
-
-                const modelsResponse = await fetch(
-                    `https://generativelanguage.googleapis.com/v1beta/models?key=${geminiApiKey}`,
-                    { signal: modelsFetchController.signal }
-                );
-                clearTimeout(modelsTimeout);
-                newController.signal.removeEventListener('abort', onUserAbort);
-
-                if (modelsResponse.ok) {
-                    const modelsJson = await modelsResponse.json();
-                    const availableModels = modelsJson.models || [];
-                    // Only consider models that support generateContent
-                    const usableModels = availableModels.filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'));
-                    usableModelNamesStr = usableModels.map((m: any) => m.name.replace('models/', '')).join(', ');
-
-                    // Priority list — updated to current Gemini model names
-                    const preferredModels = [
-                        'models/gemini-2.0-flash',
-                        'models/gemini-2.0-flash-lite',
-                        'models/gemini-2.5-pro',
-                        'models/gemini-1.5-flash',
-                        'models/gemini-1.5-pro',
-                    ];
-
-                    let foundPreferred = false;
-                    for (const preferred of preferredModels) {
-                        if (usableModels.some((m: any) => m.name === preferred)) {
-                            targetModel = preferred;
-                            foundPreferred = true;
-                            break;
-                        }
-                    }
-
-                    // Fallback to whichever model supports generation if preferred ones are missing
-                    if (!foundPreferred && usableModels.length > 0) {
-                        targetModel = usableModels[0].name;
-                    }
-                }
-            } catch (modelListErr: any) {
-                // If cancelled by user, re-throw so the outer catch handles it
-                if (newController.signal.aborted) throw modelListErr;
-                // Otherwise just use the default model (timeout, network blip, etc.)
-                console.warn('Model list fetch failed, using default model:', modelListErr.message);
-            }
-
-            // 2. Execute against the chosen model
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/${targetModel}:generateContent?key=${geminiApiKey}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payloadBox),
-                signal: newController.signal
+            const getPayload = (instruction: string) => ({
+                 contents: [
+                     { parts: [{ text: `Here is the message log for ${logTargetName}:\n\n${condensedLog}\n\nBased on these logs, please fulfill the following request:\n${aiPrompt}\n\n${instruction}` }] }
+                 ],
+                 generationConfig: { temperature: 0.2 }
             });
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                const baseMsg = errorData.error?.message || `API Error: ${response.status}`;
-                throw new Error(usableModelNamesStr ? `${baseMsg}\n\nModels you have access to: ${usableModelNamesStr}` : baseMsg);
+            // Fire off both requests completely in parallel
+            const [standardRes, verificationRes] = await Promise.all([
+                fetch(`https://generativelanguage.googleapis.com/v1beta/${geminiModel}:generateContent?key=${geminiApiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(getPayload(standardInstruction)),
+                    signal: newController.signal
+                }),
+                fetch(`https://generativelanguage.googleapis.com/v1beta/${geminiModel}:generateContent?key=${geminiApiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(getPayload(verificationInstruction)),
+                    signal: newController.signal
+                })
+            ]);
+
+            if (!standardRes.ok) {
+                let errData;
+                try { errData = await standardRes.json(); } catch (e) {}
+                throw new Error(errData?.error?.message || `Standard Report: Failed to generate insight. HTTP ${standardRes.status}`);
+            }
+            if (!verificationRes.ok) {
+                let errData;
+                try { errData = await verificationRes.json(); } catch (e) {}
+                throw new Error(errData?.error?.message || `Verification Report: Failed to generate insight. HTTP ${verificationRes.status}`);
             }
 
-            const json = await response.json();
-            const textResponse = json.candidates?.[0]?.content?.parts?.[0]?.text;
+            const standardData = await standardRes.json();
+            const verificationData = await verificationRes.json();
 
-            if (textResponse) {
-                setAiResult(textResponse);
-            } else {
-                setAiError("The AI returned an empty or malformed response.");
+            let standardText = "";
+            let verificationText = "";
+
+            if (standardData.candidates && standardData.candidates.length > 0) {
+                 standardText = standardData.candidates[0].content.parts.map((p: any) => p.text).join('\n');
+            }
+            if (verificationData.candidates && verificationData.candidates.length > 0) {
+                 verificationText = verificationData.candidates[0].content.parts.map((p: any) => p.text).join('\n');
+            }
+            
+            if (!standardText && !verificationText) {
+                 throw new Error("The AI returned an empty or malformed response.");
+            }
+
+            const combinedText = standardText + '\n\n---\n\n## 🔗 Verification Links Report\n\n' + verificationText;
+            setAiResult(combinedText);
+            
+            // Save immediately to local data via IPC
+            if (reportId && (window as any).electronAPI) {
+                const newInsight = {
+                    channelTarget: logTargetName,
+                    prompt: aiPrompt,
+                    result: combinedText,
+                    id: Date.now().toString(),
+                    timestamp: Date.now()
+                };
+                try {
+                    const res = await (window as any).electronAPI.invoke('save-insight', { reportId, insight: newInsight });
+                    if (res?.success) setSavedInsights(res.insights || []);
+                } catch (e) {
+                    console.error('Failed to save insight', e);
+                }
             }
         } catch (e: any) {
             if (e.name === 'AbortError') {
@@ -1052,9 +1047,14 @@ export default function ReportView({ data: rawData, geminiApiKey, onClose }: Rep
                             {overview.dateStart} — {overview.dateEnd} · {overview.totalChannels} channel{overview.totalChannels !== 1 ? 's' : ''} analyzed
                         </p>
                     </div>
-                    <button className="report-close-btn" onClick={onClose}>
-                        <X size={16} /> Close Report
-                    </button>
+                    <div style={{ display: 'flex', gap: '12px' }}>
+                        <button className="report-close-btn" onClick={() => window.print()}>
+                            <FileText size={16} /> Export PDF
+                        </button>
+                        <button className="report-close-btn" onClick={onClose}>
+                            <X size={16} /> Close Report
+                        </button>
+                    </div>
                 </div>
 
                 {/* Header Row 2: View Modes */}
@@ -1218,6 +1218,20 @@ export default function ReportView({ data: rawData, geminiApiKey, onClose }: Rep
                                                             ))}
                                                         </select>
                                                     </div>
+                                                    
+                                                    <div className="di-input-group di-channel-select">
+                                                        <label>Model Engine</label>
+                                                        <select
+                                                            value={geminiModel}
+                                                            onChange={(e) => setGeminiModel && setGeminiModel(e.target.value)}
+                                                            disabled={aiIsLoading}
+                                                        >
+                                                            <option value="models/gemini-2.5-flash">Gemini 2.5 Flash</option>
+                                                            <option value="models/gemini-2.5-pro">Gemini 2.5 Pro</option>
+                                                            <option value="models/gemini-1.5-flash">Gemini 1.5 Flash</option>
+                                                            <option value="models/gemini-3.1-pro-preview">Gemini 3.1 Pro Preview</option>
+                                                        </select>
+                                                    </div>
                                                 </div>
 
                                                 <div className="di-form-row">
@@ -1246,9 +1260,10 @@ export default function ReportView({ data: rawData, geminiApiKey, onClose }: Rep
                                                         className={`di-analyze-btn ${aiIsLoading ? 'loading' : ''}`}
                                                         onClick={handleRunAI}
                                                         disabled={aiIsLoading || !aiSelectedChannel}
+                                                        style={{ flex: 1 }}
                                                     >
                                                         {aiIsLoading ? (
-                                                            <><Loader2 size={18} className="spin" /> Analyzing Logs...</>
+                                                            <><Loader2 size={18} className="spin" /> Analyzing Logs & Verifying Links...</>
                                                         ) : (
                                                             <><Sparkles size={18} /> Gather Insight</>
                                                         )}
@@ -1282,15 +1297,29 @@ export default function ReportView({ data: rawData, geminiApiKey, onClose }: Rep
                                                         <div className="di-result-header">
                                                             <h3>Analysis Results for {aiSelectedChannel === 'all_channels' ? 'All Channels' : `#${aiSelectedChannel}`}</h3>
                                                         </div>
-                                                        <div className="di-markdown-content" dangerouslySetInnerHTML={{
-                                                            __html: aiResult
-                                                                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                                                                .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                                                                .replace(/^# (.*?)$/gm, '<h1>$1</h1>')
-                                                                .replace(/^## (.*?)$/gm, '<h2>$1</h2>')
-                                                                .replace(/^### (.*?)$/gm, '<h3>$1</h3>')
-                                                                .replace(/^- (.*?)$/gm, '<li>$1</li>')
-                                                        }} />
+                                                        <div className="di-markdown-content markdown-styled">
+                                                            <ReactMarkdown 
+                                                                remarkPlugins={[remarkGfm]}
+                                                                components={{
+                                                                    a: ({node, ...props}) => (
+                                                                        <a 
+                                                                            {...props} 
+                                                                            title="Click to view in Discord"
+                                                                            onClick={(e) => {
+                                                                                e.preventDefault();
+                                                                                if ((window as any).electronAPI && (window as any).electronAPI.openExternal && props.href) {
+                                                                                    (window as any).electronAPI.openExternal(props.href);
+                                                                                } else if (props.href) {
+                                                                                    window.open(props.href, '_blank');
+                                                                                }
+                                                                            }} 
+                                                                        />
+                                                                    )
+                                                                }}
+                                                            >
+                                                                {aiResult}
+                                                            </ReactMarkdown>
+                                                        </div>
                                                     </div>
                                                 )}
                                             </div>
@@ -1299,18 +1328,37 @@ export default function ReportView({ data: rawData, geminiApiKey, onClose }: Rep
                                 </div>
                             </div>
 
-                            {/* RIGHT SIDE BUBBLES */}
+                            {/* RIGHT SIDE BUBBLES OR HISTORY */}
                             <div className="di-side-panel">
-                                {geminiApiKey && activePrompts.slice(2, 4).map((preset, idx) => (
-                                    <div
-                                        key={preset}
-                                        className={`di-floating-bubble di-bubble-${idx + 3}`}
-                                        onClick={() => handlePromptClick(preset)}
-                                    >
-                                        <div className="di-bubble-content">{preset}</div>
-                                        <div className="di-bubble-hint">+ Add Prompt</div>
+                                {savedInsights.length > 0 ? (
+                                    <div className="di-history-panel">
+                                        <h4><Clock size={14}/> Past Insights</h4>
+                                        <div className="di-history-list">
+                                           {[...savedInsights].sort((a, b) => b.timestamp - a.timestamp).map((insight: any) => (
+                                              <div key={insight.id || insight.timestamp} className="di-history-item" onClick={() => {
+                                                  setAiSelectedChannel(insight.channelTarget);
+                                                  setAiPrompt(insight.prompt);
+                                                  setAiResult(insight.result);
+                                              }}>
+                                                  <div className="di-hi-channel">{insight.channelTarget === 'all_channels' ? 'All Channels' : `#${insight.channelTarget}`}</div>
+                                                  <div className="di-hi-prompt">{insight.prompt.length > 50 ? insight.prompt.substring(0, 50) + '...' : insight.prompt}</div>
+                                                  <div className="di-hi-time">{new Date(insight.timestamp).toLocaleDateString()} {new Date(insight.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+                                              </div>
+                                           ))}
+                                        </div>
                                     </div>
-                                ))}
+                                ) : (
+                                    geminiApiKey && activePrompts.slice(2, 4).map((preset, idx) => (
+                                        <div
+                                            key={preset}
+                                            className={`di-floating-bubble di-bubble-${idx + 3}`}
+                                            onClick={() => handlePromptClick(preset)}
+                                        >
+                                            <div className="di-bubble-content">{preset}</div>
+                                            <div className="di-bubble-hint">+ Add Prompt</div>
+                                        </div>
+                                    ))
+                                )}
                             </div>
                         </div>
                     </div>

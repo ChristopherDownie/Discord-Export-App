@@ -1159,8 +1159,12 @@
 .di-side-panel {
     flex: 1;
     position: relative;
-    pointer-events: none;
+    pointer-events: auto;
     min-width: 250px;
+    display: flex;
+    justify-content: flex-start;
+    padding-left: 20px;
+    padding-right: 20px;
 }
 
 .deep-insight-overlay-container {
@@ -1388,6 +1392,81 @@
     color: #d1d5db;
 }
 
+/* ─── Past Insights History ─────────────────────────────────────────────── */
+.di-history-panel {
+    background: rgba(17, 17, 26, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    padding: 16px;
+    backdrop-filter: blur(10px);
+    display: flex;
+    flex-direction: column;
+    max-height: 480px;
+    width: 320px;
+    pointer-events: auto;
+}
+
+.di-history-panel h4 {
+    margin: 0 0 12px 0;
+    color: #e2e5ea;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.di-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.di-history-list::-webkit-scrollbar {
+    width: 4px;
+}
+
+.di-history-list::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+}
+
+.di-history-item {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    padding: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.di-history-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(67, 229, 160, 0.3);
+}
+
+.di-hi-channel {
+    font-size: 11px;
+    color: #56b4f9;
+    font-weight: 600;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.di-hi-prompt {
+    font-size: 13px;
+    color: #d1d5db;
+    margin-bottom: 6px;
+    line-height: 1.3;
+}
+
+.di-hi-time {
+    font-size: 11px;
+    color: #6b7280;
+}
+
 /* Stagger animations and starting positions so they float around the screen edges */
 .di-bubble-1 {
     top: 5%;
@@ -1478,4 +1557,197 @@
 /* ─── Heatmap overflow fix when in two-col ─────────────────────────── */
 .report-two-col .heatmap-grid {
     overflow-x: auto;
+}
+
+/* ─── AI Generated Markdown Styling ─────────────────────────────────────── */
+.markdown-styled {
+    font-size: 14px;
+    line-height: 1.6;
+    color: #e2e5ea;
+}
+
+.markdown-styled h1, 
+.markdown-styled h2, 
+.markdown-styled h3 {
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+    color: #f3f4f6;
+}
+
+.markdown-styled h1 { font-size: 1.5em; }
+.markdown-styled h2 { font-size: 1.3em; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 4px; }
+.markdown-styled h3 { font-size: 1.1em; }
+
+.markdown-styled p {
+    margin-bottom: 1em;
+}
+
+.markdown-styled ul, .markdown-styled ol {
+    margin-bottom: 1em;
+    padding-left: 1.5em;
+}
+
+.markdown-styled li {
+    margin-bottom: 0.25em;
+}
+
+.markdown-styled a {
+    color: #56b4f9;
+    text-decoration: none;
+}
+
+.markdown-styled a:hover {
+    text-decoration: underline;
+}
+
+.markdown-styled blockquote {
+    margin: 1em 0;
+    padding: 10px 16px;
+    border-left: 3px solid #7c6aef;
+    background: rgba(124, 106, 239, 0.05);
+    color: #d1d5db;
+    border-radius: 0 8px 8px 0;
+}
+
+/* Beautiful Markdown Tables */
+.markdown-styled table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.5em 0;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.markdown-styled th {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 12px 16px;
+    text-align: left;
+    font-size: 13px;
+    font-weight: 600;
+    color: #d1d5db;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.markdown-styled td {
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    color: #9ca3af;
+    font-size: 14px;
+}
+
+.markdown-styled tr:last-child td {
+    border-bottom: none;
+}
+
+.markdown-styled tr:nth-child(even) td {
+    background: rgba(255, 255, 255, 0.015);
+}
+
+.markdown-styled tr:hover td {
+    background: rgba(255, 255, 255, 0.035);
+    color: #e2e5ea;
+}
+
+.markdown-styled td a {
+    display: inline-block;
+    padding: 4px 10px;
+    background: rgba(86, 180, 249, 0.1);
+    border: 1px solid rgba(86, 180, 249, 0.25);
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    transition: all 0.2s;
+    color: #56b4f9;
+}
+
+.markdown-styled td a:hover {
+    background: rgba(86, 180, 249, 0.2);
+    text-decoration: none;
+    border-color: rgba(86, 180, 249, 0.4);
+}
+
+.markdown-styled code {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 0.9em;
+    color: #43e5a0;
+}
+
+/* ─── Print Styles ─── */
+@media print {
+    body {
+        margin: 0;
+        padding: 0;
+        background: white !important;
+    }
+    
+    .report-overlay {
+        position: static !important;
+        background: transparent !important;
+        backdrop-filter: none !important;
+        overflow: visible !important;
+    }
+    
+    .report-dashboard {
+        max-width: 100% !important;
+        padding: 0 !important;
+        color: black !important;
+    }
+
+    .report-header button,
+    .report-view-modes,
+    .timeframe-toggle-container,
+    .user-selectors,
+    .custom-mod-editor {
+        display: none !important;
+    }
+
+    .report-dashboard h1 {
+        -webkit-text-fill-color: black !important;
+    }
+
+    .report-card, .report-chart-card {
+        border: 1px solid #ddd !important;
+        break-inside: avoid !important;
+        background: white !important;
+    }
+    
+    .report-card-value, .report-card-label, .report-section-title {
+        color: black !important;
+    }
+
+    .report-card-value.highlight {
+        -webkit-text-fill-color: black !important;
+    }
+
+    .heatmap-cell {
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+    }
+    
+    .rank-bar-fill {
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+    }
+
+    /* AI Insight view printing */
+    .di-side-panel {
+        display: none !important;
+    }
+    .deep-insight-overlay-container {
+        border: none !important;
+        box-shadow: none !important;
+    }
+    .di-form-area, .di-action-row {
+        display: none !important;
+    }
+    .di-markdown-content {
+        color: black !important;
+    }
 }
